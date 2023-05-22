@@ -48,6 +48,9 @@ export class AuthController {
     //Store user in the database
     const token = this.authService.generateToken()
     //Send email token to the user
+    this.authService.sendMailToken(email, token)
+
+    return { message: "Account created" }
   }
 
   @Post('/activate')
