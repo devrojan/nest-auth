@@ -1,61 +1,132 @@
-import { BadRequestException, Body, Controller, Post } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { PrismaService } from 'src/prisma.service';
 import { LoginDto } from './dto/login.dto';
-import * as bcrypt from "bcrypt"
+import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { RegisterDto } from './dto/register.dto';
+import { AccountActivateDto } from './dto/account-activate.dto';
+import { JwtAuthGuard } from './jwt.guard';
+import { AuthenticatedUser } from 'src/decorators/authenticated-user';
+import { User } from '@prisma/client';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService, private prisma: PrismaService, private jwtService: JwtService) { }
+  constructor(
+    private authService: AuthService,
+    private prisma: PrismaService,
+    private jwtService: JwtService,
+  ) {}
 
   @Post('/login')
   async login(@Body() loginDto: LoginDto) {
-    const { email, password } = loginDto
-    const user = await this.prisma.user.findUnique({ where: { email } })
+    const { email, password } = loginDto;
+    const user = await this.prisma.user.findUnique({ where: { email } });
 
     //Check user if have valid credential
-    const passwordMatch = await bcrypt.compare(password, user.password)
+    const passwordMatch = await bcrypt.compare(password, user.password);
 
     if (!passwordMatch) {
-      throw new BadRequestException('Invalid email or password.')
+      throw new BadRequestException('Invalid email or password.');
     }
 
     if (!user.status) {
-      throw new BadRequestException('Please activate your account')
+      throw new BadRequestException('Please activate your account');
     }
 
     //return token
-    return { accessToken: await this.jwtService.signAsync({ email: user.email }) }
+    return {
+      accessToken: await this.jwtService.signAsync({ email: user.email }),
+    };
   }
 
   @Post('/register')
   async register(@Body() registerDto: RegisterDto) {
     //Check if email was taken
-    const { email, password, firstName, lastName } = registerDto
-    const user = await this.prisma.user.findUnique({ where: { email } })
+    const { email, password, firstName, lastName } = registerDto;
+    const user = await this.prisma.user.findUnique({ where: { email } });
 
     if (user) {
-      throw new BadRequestException('Email was already taken')
+      throw new BadRequestException('Email was already taken');
     }
 
     //Hash password
-    const salt = 10
-    const hashPassword = await bcrypt.hash(password, salt)
-    await this.prisma.user.create({ data: { email, password: hashPassword, firstName, lastName } })
-
+    const hashPassword = await this.authService.hashPassword(password);
     //Store user in the database
-    const token = this.authService.generateToken()
-    //Send email token to the user
-    this.authService.sendMailToken(email, token)
+    const salt = 10;
+    const token = this.authService.generateToken();
+    const tokenHash = await bcrypt.hash(token, salt);
+    await this.prisma.user.create({
+      data: {
+        email,
+        password: hashPassword,
+        firstName,
+        lastName,
+        activationToken: tokenHash,
+      },
+    });
 
-    return { message: "Account created" }
+    //Send email token to the user
+    this.authService.sendMailToken(email, token);
+
+    return { message: 'Account created' };
   }
 
   @Post('/activate')
-  async activate() { }
+  @UseGuards(JwtAuthGuard)
+  async activate(
+    @AuthenticatedUser() authUser: User,
+    @Body() accountActivateDto: AccountActivateDto,
+  ) {
+    const { token } = accountActivateDto;
+
+    const tokenMatch = await bcrypt.compare(token, authUser.activationToken);
+
+    if (!tokenMatch) {
+      throw new BadRequestException('Invalid token');
+    }
+
+    //Update user status
+    await this.prisma.user.update({
+      where: { email: authUser.email },
+      data: { activationToken: null, status: true },
+    });
+
+    return { message: 'Account successfully activated' };
+  }
 
   @Post('/change-password')
-  async changePassword() { }
+  @UseGuards(JwtAuthGuard)
+  async changePassword(
+    @AuthenticatedUser() user: User,
+    @Body() changePassword: ChangePasswordDto,
+  ) {
+    //Check if current password is match
+    const oldPasswordMatch = await bcrypt.compare(
+      changePassword.password,
+      user.password,
+    );
+
+    if (!oldPasswordMatch) {
+      throw new BadRequestException('Old password is wrong');
+    }
+
+    await this.prisma.user.update({
+      where: { email: user.email },
+      data: {
+        password: await this.authService.hashPassword(
+          changePassword.newPassword,
+        ),
+      },
+    });
+
+    return { message: 'Password changed' };
+  }
 }
