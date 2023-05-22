@@ -16,22 +16,21 @@ import { UserModule } from './user/user.module';
         port: Number(process.env.MAIL_PORT),
         auth: {
           user: process.env.MAIL_USER,
-          pass: process.env.MAIL_PASSWORD
-        }
+          pass: process.env.MAIL_PASSWORD,
+        },
       },
       defaults: {
-        from: '"nest-auth" <test@nestauth.com>'
+        from: '"nest-auth" <test@nestauth.com>',
       },
       template: {
         dir: process.cwd() + 'src/mail-templates',
         adapter: new HandlebarsAdapter(),
-        options: { strict: true }
-
-      }
+        options: { strict: true },
+      },
     }),
-    UserModule
+    UserModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule { }
+export class AppModule {}

@@ -10,7 +10,14 @@ export class UserController {
   @UseGuards(JwtAuthGuard)
   async getAll() {
     return await this.prisma.user.findMany({
-      select: { email: true, firstName: true, lastName: true, status: true },
+      select: {
+        email: true,
+        firstName: true,
+        lastName: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
   }
 }
