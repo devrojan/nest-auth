@@ -30,6 +30,10 @@ export class AuthController {
     const { email, password } = loginDto;
     const user = await this.prisma.user.findUnique({ where: { email } });
 
+    if (!user) {
+      throw new BadRequestException("Couldn't not found your account");
+    }
+
     //Check user if have valid credential
     const passwordMatch = await bcrypt.compare(password, user.password);
 
@@ -80,14 +84,17 @@ export class AuthController {
   }
 
   @Post('/activate')
-  @UseGuards(JwtAuthGuard)
-  async activate(
-    @AuthenticatedUser() authUser: User,
-    @Body() accountActivateDto: AccountActivateDto,
-  ) {
-    const { token } = accountActivateDto;
+  async activate(@Body() accountActivateDto: AccountActivateDto) {
+    const { token, email } = accountActivateDto;
 
-    const tokenMatch = await bcrypt.compare(token, authUser.activationToken);
+    const user = await this.prisma.user.findUnique({ where: { email } });
+
+    if (user.status) {
+      throw new BadRequestException('Account already activated');
+    }
+
+    //Check token match
+    const tokenMatch = await bcrypt.compare(token, user.activationToken);
 
     if (!tokenMatch) {
       throw new BadRequestException('Invalid token');
@@ -95,7 +102,7 @@ export class AuthController {
 
     //Update user status
     await this.prisma.user.update({
-      where: { email: authUser.email },
+      where: { email: email },
       data: { activationToken: null, status: true },
     });
 
